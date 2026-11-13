@@ -1,0 +1,14 @@
+.git/
+.github/
+.azure/
+infra/
+src/
+test/
+vendor/
+azure.yaml
+*.Dockerfile
+Dockerfile
+LICENSE
+README.md
+local.settings.example.json
+tsconfig.json
