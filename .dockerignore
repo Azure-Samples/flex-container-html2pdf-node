@@ -1,0 +1,10 @@
+*
+!*.Dockerfile
+!package.json
+!package-lock.json
+!tsconfig.json
+!host.json
+!vendor/
+!vendor/**
+!src/
+!src/**
