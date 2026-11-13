@@ -43,6 +43,7 @@ function Invoke-WithRetry {
 
 $parameterPath = $null
 $buildContext = $null
+$workerArchive = $null
 $registryPassword = $null
 $storageConnectionString = $null
 
@@ -63,13 +64,30 @@ try {
 
     & az account set --subscription $subscriptionId
 
+    $workerUrl =
+        'https://aka.ms/azurefunctions/releases/node/worker/latest/worker.tar.gz'
+    $workerArchive = Join-Path ([IO.Path]::GetTempPath()) (
+        "functions-node-worker-$([guid]::NewGuid().ToString('N')).tar.gz"
+    )
+    Invoke-WebRequest `
+        -Uri $workerUrl `
+        -OutFile $workerArchive `
+        -MaximumRedirection 10
+    $workerSha256 = (
+        Get-FileHash -LiteralPath $workerArchive -Algorithm SHA256
+    ).Hash.ToLowerInvariant()
+    if ($workerSha256 -notmatch '^[0-9a-f]{64}$') {
+        throw "Node worker SHA-256 is invalid: '$workerSha256'."
+    }
+
     $buildContext = Join-Path ([IO.Path]::GetTempPath()) (
         "function-image-$([guid]::NewGuid().ToString('N'))"
     )
     New-Item -ItemType Directory -Path $buildContext | Out-Null
     $contextHash = (& node `
             (Join-Path $PSScriptRoot 'imagecontext.mjs') `
-            $buildContext).Trim()
+            $buildContext `
+            "worker-sha256:$workerSha256").Trim()
     if ($contextHash -notmatch '^[0-9a-f]{64}$') {
         throw "Image-context hash is invalid: '$contextHash'."
     }
@@ -113,6 +131,7 @@ try {
             --platform linux/amd64 `
             --file node24.Dockerfile `
             --image $taggedImage `
+            --build-arg "FUNCTIONS_NODE_WORKER_SHA256=$workerSha256" `
             --timeout 1800 `
             --no-logs `
             --only-show-errors `
@@ -214,6 +233,8 @@ try {
         Out-Null
     & azd env set AZURE_IMAGE_BUILD_ACTION $buildAction --no-prompt |
         Out-Null
+    & azd env set AZURE_NODE_WORKER_SHA256 $workerSha256 --no-prompt |
+        Out-Null
     & azd env set AZURE_IMAGE_TAG $imageTag --no-prompt | Out-Null
     & azd env set AZURE_IMAGE_DIGEST $digest --no-prompt | Out-Null
     & azd env set AZURE_REGISTRY_IMAGE $registryImage --no-prompt | Out-Null
@@ -238,6 +259,9 @@ try {
     }
     if ($buildContext -and (Test-Path -LiteralPath $buildContext)) {
         Remove-Item -LiteralPath $buildContext -Recurse -Force
+    }
+    if ($workerArchive -and (Test-Path -LiteralPath $workerArchive)) {
+        Remove-Item -LiteralPath $workerArchive -Force
     }
     $registryPassword = $null
     $storageConnectionString = $null

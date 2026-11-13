@@ -44,6 +44,7 @@ retry() {
 
 PARAMETER_PATH=
 BUILD_CONTEXT=
+WORKER_ARCHIVE=
 REGISTRY_PASSWORD=
 STORAGE_CONNECTION_STRING=
 cleanup() {
@@ -66,6 +67,9 @@ if (
 }
 fs.rmSync(target, { recursive: true, force: true });
 NODE
+    fi
+    if [ -n "$WORKER_ARCHIVE" ] && [ -f "$WORKER_ARCHIVE" ]; then
+        rm -f -- "$WORKER_ARCHIVE"
     fi
     REGISTRY_PASSWORD=
     STORAGE_CONNECTION_STRING=
@@ -93,8 +97,22 @@ AZURE_APPLICATION_INSIGHTS_CONNECTION_STRING=$(
 
 az account set --subscription "$AZURE_SUBSCRIPTION_ID"
 
+WORKER_URL='https://aka.ms/azurefunctions/releases/node/worker/latest/worker.tar.gz'
+WORKER_ARCHIVE=$(mktemp "${TMPDIR:-/tmp}/functions-node-worker.XXXXXX.tar.gz")
+curl --fail --location --silent --show-error \
+    "$WORKER_URL" \
+    --output "$WORKER_ARCHIVE"
+WORKER_SHA256=$(sha256sum "$WORKER_ARCHIVE" | awk '{ print $1 }')
+if ! printf '%s' "$WORKER_SHA256" | grep -Eq '^[0-9a-f]{64}$'; then
+    echo "Node worker SHA-256 is invalid: '$WORKER_SHA256'." >&2
+    exit 1
+fi
+
 BUILD_CONTEXT=$(mktemp -d "${TMPDIR:-/tmp}/function-image.XXXXXX")
-CONTEXT_HASH=$(node "$SCRIPT_DIR/imagecontext.mjs" "$BUILD_CONTEXT")
+CONTEXT_HASH=$(node \
+    "$SCRIPT_DIR/imagecontext.mjs" \
+    "$BUILD_CONTEXT" \
+    "worker-sha256:$WORKER_SHA256")
 if ! printf '%s' "$CONTEXT_HASH" | grep -Eq '^[0-9a-f]{64}$'; then
     echo "Image-context hash is invalid: '$CONTEXT_HASH'." >&2
     exit 1
@@ -131,6 +149,7 @@ else
         --platform linux/amd64 \
         --file node24.Dockerfile \
         --image "$TAGGED_IMAGE" \
+        --build-arg "FUNCTIONS_NODE_WORKER_SHA256=$WORKER_SHA256" \
         --timeout 1800 \
         --only-show-errors \
         "$BUILD_CONTEXT"
@@ -234,6 +253,7 @@ fi
 
 azd env set AZURE_IMAGE_CONTEXT_HASH "$CONTEXT_HASH" --no-prompt >/dev/null
 azd env set AZURE_IMAGE_BUILD_ACTION "$BUILD_ACTION" --no-prompt >/dev/null
+azd env set AZURE_NODE_WORKER_SHA256 "$WORKER_SHA256" --no-prompt >/dev/null
 azd env set AZURE_IMAGE_TAG "$IMAGE_TAG" --no-prompt >/dev/null
 azd env set AZURE_IMAGE_DIGEST "$DIGEST" --no-prompt >/dev/null
 azd env set AZURE_REGISTRY_IMAGE "$REGISTRY_IMAGE" --no-prompt >/dev/null

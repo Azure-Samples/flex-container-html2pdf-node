@@ -48,7 +48,7 @@ function copyEntry(source, destination) {
   chmodSync(destination, 0o644);
 }
 
-export function hashImageContext(contextRoot) {
+export function hashImageContext(contextRoot, externalInputs = []) {
   const root = resolve(contextRoot);
   const hash = createHash('sha256');
   hash.update('flex-container-image-context-v1\0');
@@ -81,10 +81,18 @@ export function hashImageContext(contextRoot) {
     visit(join(root, entry.name));
   }
 
+  for (const input of [...externalInputs].sort()) {
+    hash.update(`external\0${input}\0`);
+  }
+
   return hash.digest('hex');
 }
 
-export function prepareImageContext(repositoryRoot, destinationRoot) {
+export function prepareImageContext(
+  repositoryRoot,
+  destinationRoot,
+  externalInputs = [],
+) {
   const repository = resolve(repositoryRoot);
   const destination = resolve(destinationRoot);
   mkdirSync(destination, { recursive: true, mode: 0o755 });
@@ -97,7 +105,7 @@ export function prepareImageContext(repositoryRoot, destinationRoot) {
     copyEntry(join(repository, input), join(destination, input));
   }
 
-  return hashImageContext(destination);
+  return hashImageContext(destination, externalInputs);
 }
 
 const scriptPath = fileURLToPath(import.meta.url);
@@ -107,11 +115,16 @@ if (invokedPath === import.meta.url) {
   try {
     const destination = process.argv[2];
     if (!destination) {
-      throw new Error('Usage: node imagecontext.mjs <empty-destination-directory>');
+      throw new Error(
+        'Usage: node imagecontext.mjs <empty-destination-directory> [external-input ...]',
+      );
     }
 
     const repositoryRoot = resolve(dirname(scriptPath), '..', '..');
-    process.stdout.write(`${prepareImageContext(repositoryRoot, destination)}\n`);
+    const externalInputs = process.argv.slice(3);
+    process.stdout.write(
+      `${prepareImageContext(repositoryRoot, destination, externalInputs)}\n`,
+    );
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

@@ -87,7 +87,7 @@ The function:
 1. validates cleanup of browser and page resources;
 1. returns `application/pdf` with no-store and nosniff headers.
 
-Exact runtime and dependency pins live in
+Runtime and dependency configuration lives in
 [`node24.Dockerfile`](./node24.Dockerfile),
 [`package.json`](./package.json), and
 [`package-lock.json`](./package-lock.json). Those files are the source of truth
@@ -102,17 +102,26 @@ deploy the sample.
 
 During `azd up`:
 
+1. The deployment resolves the current floating worker artifact and calculates
+   its SHA-256.
 1. [`imagecontext.mjs`](./infra/scripts/imagecontext.mjs) stages only files
-   that affect the image and calculates a deterministic SHA-256.
-1. The hash becomes the image tag: `azd-<context-hash>`.
+   that affect the image and calculates a deterministic SHA-256 over those
+   files plus the resolved worker SHA.
+1. The combined hash becomes the image tag: `azd-<context-hash>`.
 1. An existing tag is reused; otherwise `az acr build` runs the ACR Tasks
    quick build.
+1. ACR receives the resolved worker SHA as a build argument and verifies the
+   archive downloaded through the floating URL.
 1. The workflow resolves the registry manifest digest.
 1. The Function App is pinned to
    `registry/repository:tag@sha256:digest`.
 1. The tag is write- and delete-locked so its digest can't move.
 
-The Node worker archive is also SHA-256 verified during the image build.
+The worker stage uses the official Node.js worker
+[latest platform-independent reference](https://aka.ms/azurefunctions/releases/node/worker/latest/worker.tar.gz).
+That reference may resolve to a newer worker on a later build. Each completed
+application image gets a new context hash when the resolved worker changes and
+is still deployed by immutable registry digest.
 
 ## Deploy to Azure
 
