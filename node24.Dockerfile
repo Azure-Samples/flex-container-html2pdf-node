@@ -17,21 +17,19 @@ RUN if [ -n "$FUNCTIONS_NODE_WORKER_SHA256" ]; then \
 
 FROM node:24-bookworm-slim AS build
 
-ARG NPM_REGISTRY=https://registry.npmjs.org/
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 COPY vendor/ ./vendor/
-RUN npm ci --ignore-scripts --registry "$NPM_REGISTRY" --no-audit --no-fund
+RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY src/ ./src/
 RUN npm run build
 
 FROM node:24-bookworm-slim AS dependencies
 
-ARG NPM_REGISTRY=https://registry.npmjs.org/
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY vendor/ ./vendor/
-RUN npm ci --omit=dev --ignore-scripts --registry "$NPM_REGISTRY" --no-audit --no-fund
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
 FROM node:24-bookworm-slim
 
@@ -47,8 +45,6 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /home/site/wwwroot
-ENV CHROMIUM_EXECUTABLE=/usr/bin/chromium
-ENV PUPPETEER_SKIP_DOWNLOAD=true
 COPY --from=worker /opt/functions-worker/ /opt/functions-worker/
 COPY --from=dependencies /app/node_modules/ ./node_modules/
 COPY --from=build /app/dist/ ./dist/
